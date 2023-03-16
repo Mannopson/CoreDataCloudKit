@@ -58,4 +58,16 @@ class ValueProvider {
             }
         }
     }
+    
+    func deleteValue(at indexPath: IndexPath, shouldSave: Bool = true) {
+        let context = fetchedResultsController.managedObjectContext
+        context.performAndWait {
+            context.delete(fetchedResultsController.object(at: indexPath))
+            do {
+                try context.save()
+            } catch {
+                return
+            }
+        }
+    }
 }

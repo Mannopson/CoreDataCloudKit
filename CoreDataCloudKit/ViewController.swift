@@ -15,8 +15,7 @@ class ViewController: UIViewController {
     
     private lazy var dataProvider: ValueProvider = {
         let appDelegate = UIApplication.shared.delegate as! AppDelegate
-        let provider = ValueProvider(with: appDelegate.coreDataStack.persistentContainer,
-                                   fetchedResultsControllerDelegate: self)
+        let provider = ValueProvider(with: appDelegate.coreDataStack.persistentContainer, fetchedResultsControllerDelegate: self)
         return provider
     }()
 
@@ -31,6 +30,11 @@ extension ViewController {
     func viewSetup() {
         navigationItem.rightBarButtonItem = .init(barButtonSystemItem: .add, target: self, action: #selector(addAction(sender:)))
         configureHierarchy()
+        
+        // Observe .didFindRelevantTransactions to update the UI if needed.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(type(of: self).didFindRelevantTransactions(_:)),
+            name: .didFindRelevantTransactions, object: nil)
     }
     
     fileprivate func configureHierarchy() {
@@ -46,6 +50,10 @@ extension ViewController {
             tableView.topAnchor.constraint(equalTo: view.topAnchor, constant: 0),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0)
         ])
+    }
+    
+    @objc func didFindRelevantTransactions(_ notification: Notification) {
+        print("REMOTE CHANGES")
     }
     
     @objc func addAction(sender: UIBarButtonItem) {
@@ -76,6 +84,12 @@ extension ViewController: UITableViewDataSource {
         cell.contentConfiguration = config
         return cell
     }
+    
+    func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
+        if editingStyle == .delete {
+            dataProvider.deleteValue(at: indexPath)
+        }
+    }
 }
 
 extension ViewController: UITableViewDelegate {
@@ -83,7 +97,34 @@ extension ViewController: UITableViewDelegate {
 }
 
 extension ViewController: NSFetchedResultsControllerDelegate {
+    func controllerWillChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
+        tableView.beginUpdates()
+    }
+    
+    func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>, didChange anObject: Any, at indexPath: IndexPath?, for type: NSFetchedResultsChangeType, newIndexPath: IndexPath?) {
+        switch type {
+        case .insert:
+            if let newIndexPath = newIndexPath {
+                tableView.insertRows(at: [newIndexPath], with: .automatic)
+            }
+        case .delete:
+            if let indexPath = indexPath {
+                tableView.deleteRows(at: [indexPath], with: .fade)
+            }
+        case .update:
+            if let indexPath = indexPath, let cell = tableView.cellForRow(at: indexPath) {
+                let item = dataProvider.fetchedResultsController.object(at: indexPath)
+                var config = cell.defaultContentConfiguration()
+                config.prefersSideBySideTextAndSecondaryText = false
+                config.text = item.value
+                config.secondaryText = item.time?.description
+                cell.contentConfiguration = config
+            }
+        default: break
+        }
+    }
+    
     func controllerDidChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
-        tableView.reloadData()
+        tableView.endUpdates()
     }
 }
