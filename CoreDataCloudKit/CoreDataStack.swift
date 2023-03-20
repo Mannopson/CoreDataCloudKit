@@ -12,6 +12,10 @@ extension Notification.Name {
     static let didFindRelevantTransactions = Notification.Name("didFindRelevantTransactions")
 }
 
+// MARK: - Creating Contexts
+let appTransactionAuthorName = "app"
+
+
 class CoreDataStack {
     lazy var persistentContainer: NSPersistentContainer = {
         
@@ -31,7 +35,7 @@ class CoreDataStack {
         })
         
         container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
-        container.viewContext.transactionAuthor = "App"
+        container.viewContext.transactionAuthor = appTransactionAuthorName
         
         // Pin the viewContext to the current generation token and set it to keep itself up to date with local changes.
         container.viewContext.automaticallyMergesChangesFromParent = true
@@ -44,7 +48,8 @@ class CoreDataStack {
         // Observe Core Data remote change notifications.
         NotificationCenter.default.addObserver(
             self, selector: #selector(type(of: self).storeRemoteChange(_:)),
-            name: .NSPersistentStoreRemoteChange, object: container)
+            name: .NSPersistentStoreRemoteChange, object: container.persistentStoreCoordinator)
+        
         
         return container
     }()
@@ -99,6 +104,7 @@ extension CoreDataStack {
     @objc
     func storeRemoteChange(_ notification: Notification) {
         print("###\(#function): Merging changes from the other persistent store coordinator.")
+        print("Handle remote")
         
         // Process persistent history to merge changes from other coordinators.
         historyQueue.addOperation {
@@ -115,12 +121,15 @@ extension CoreDataStack {
             
             // Fetch history received from outside the app since the last token
             let historyFetchRequest = NSPersistentHistoryTransaction.fetchRequest!
-            historyFetchRequest.predicate = NSPredicate(format: "author != %@", "App")
+            historyFetchRequest.predicate = NSPredicate(format: "author != %@", appTransactionAuthorName)
             let request = NSPersistentHistoryChangeRequest.fetchHistory(after: lastHistoryToken)
             request.fetchRequest = historyFetchRequest
 
             let result = (try? taskContext.execute(request)) as? NSPersistentHistoryResult
-            guard let transactions = result?.result as? [NSPersistentHistoryTransaction], !transactions.isEmpty else { return }
+            guard let transactions = result?.result as? [NSPersistentHistoryTransaction], !transactions.isEmpty else {
+                print("No remote")
+                return
+            }
 
             // Post transactions relevant to the current view.
             DispatchQueue.main.async {
